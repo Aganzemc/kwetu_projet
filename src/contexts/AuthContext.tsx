@@ -7,7 +7,7 @@ interface AuthContextType {
   user: User;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (name: string, email: string, password: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
@@ -23,7 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = async () => {
     const data = await api.me();
-    setProfile(data);
+    setProfile(data?.data ?? null);
   };
 
   const updateOnlineStatus = async (_userId: string, isOnline: boolean) => {
@@ -52,11 +52,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (name: string, email: string, password: string) => {
     try {
-      const res = await api.signup({ email, password });
-      setToken(res.token);
-      setUser({ id: res.user.id, email: res.user.email });
+      await api.signup({ name, email, password });
+      const loginRes = await api.login({ email, password });
+      const token = loginRes?.data?.token;
+      const user = loginRes?.data?.user;
+      if (token) setToken(token);
+      if (user) setUser({ id: String(user.id), email: user.email });
       await fetchProfile();
       return { error: null };
     } catch (e) {
@@ -67,8 +70,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       const res = await api.login({ email, password });
-      setToken(res.token);
-      setUser({ id: res.user.id, email: res.user.email });
+      const token = res?.data?.token;
+      const user = res?.data?.user;
+      if (token) setToken(token);
+      if (user) setUser({ id: String(user.id), email: user.email });
       await fetchProfile();
       return { error: null };
     } catch (e) {

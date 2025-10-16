@@ -26,7 +26,7 @@ async function request(path: string, options: RequestInit = {}) {
 
 export const api = {
   // auth
-  signup: (payload: { email: string; password: string; firstName?: string; lastName?: string }) =>
+  signup: (payload: { name?: string; email: string; password: string; firstName?: string; lastName?: string }) =>
     request('/auth/signup', { method: 'POST', body: JSON.stringify(payload) }),
   login: (payload: { email: string; password: string }) =>
     request('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),

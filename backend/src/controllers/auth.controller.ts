@@ -3,10 +3,23 @@ import { loginUser, registerUser } from '../services/auth.service';
 
 export async function register(req: Request, res: Response) {
   try {
-    const { name, email, password } = req.body ?? {};
+    const b: any = req.body ?? {};
+    console.log('Register body:', b);
+    const composedName = (b.firstName && b.lastName)
+      ? `${b.firstName} ${b.lastName}`
+      : undefined;
+    const name = (b.name ?? b.username ?? b.fullName ?? composedName ?? b.user?.name)
+      ?.toString()
+      ?.trim();
+    const email = (b.email ?? b.user?.email)?.toString()?.trim();
+    const password = (b.password ?? b.user?.password)?.toString();
 
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Missing fields' });
+      const missing: string[] = [];
+      if (!name) missing.push('name');
+      if (!email) missing.push('email');
+      if (!password) missing.push('password');
+      return res.status(400).json({ success: false, message: 'Missing fields', missing, receivedKeys: Object.keys(b) });
     }
 
     const result = await registerUser(name, email, password);
@@ -25,10 +38,16 @@ export async function register(req: Request, res: Response) {
 
 export async function login(req: Request, res: Response) {
   try {
-    const { email, password } = req.body ?? {};
+    const b: any = req.body ?? {};
+    console.log('Login body:', b);
+    const email = (b.email ?? b.user?.email)?.toString()?.trim();
+    const password = (b.password ?? b.user?.password)?.toString();
 
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Missing fields' });
+      const missing: string[] = [];
+      if (!email) missing.push('email');
+      if (!password) missing.push('password');
+      return res.status(400).json({ success: false, message: 'Missing fields', missing, receivedKeys: Object.keys(b) });
     }
 
     const result = await loginUser(email, password);

@@ -8,6 +8,7 @@ import { logoPath } from '../lib/assets';
 
 export default function Register() {
   const { t } = useI18n();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -37,7 +38,7 @@ export default function Register() {
     }
 
     setLoading(true);
-    const { error } = await signUp(email, password);
+    const { error } = await signUp(name, email, password);
 
     if (error) {
       setError(error.message);
@@ -76,6 +77,22 @@ export default function Register() {
           )}
 
           <div className="space-y-4">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t('name') || 'Name'}
+              </label>
+              <div className="relative">
+                <input
+                  id="name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white transition-colors"
+                  placeholder="John Doe"
+                />
+              </div>
+            </div>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {t('email_address')}
