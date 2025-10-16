@@ -47,6 +47,13 @@ export const api = {
     return request(`/messages?${q.toString()}`);
   },
   sendMessage: (payload: any) => request('/messages', { method: 'POST', body: JSON.stringify(payload) }),
+
+  // users
+  users: {
+    list: () => request('/users'),
+    get: (id: number | string) => request(`/users/${id}`),
+    delete: (id: number | string) => request(`/users/${id}`, { method: 'DELETE' })
+  }
 };
 
 

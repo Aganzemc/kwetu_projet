@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { MessageSquare, User, Settings, LogOut, Moon, Sun } from 'lucide-react';
+import { MessageSquare, User, Users as UsersIcon, Settings, LogOut, Moon, Sun } from 'lucide-react';
 
 interface LayoutProps {
   children: ReactNode;
@@ -47,6 +47,18 @@ export default function Layout({ children }: LayoutProps) {
             title="Chat"
           >
             <MessageSquare className="w-6 h-6" />
+          </Link>
+
+          <Link
+            to="/users"
+            className={`p-3 rounded-xl transition-colors ${
+              isActive('/users')
+                ? 'bg-black dark:bg-white text-white dark:text-black'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+            title="Users"
+          >
+            <UsersIcon className="w-6 h-6" />
           </Link>
 
           <Link

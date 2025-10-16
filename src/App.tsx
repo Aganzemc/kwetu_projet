@@ -16,6 +16,7 @@ const Profile = lazy(() => import('./pages/Profile'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Privacy = lazy(() => import('./pages/Privacy'));
 const Policy = lazy(() => import('./pages/Policy'));
+const Users = lazy(() => import('./pages/Users'));
 
 function LoadingSpinner() {
   return (
@@ -54,6 +55,17 @@ function App() {
                   <ProtectedRoute>
                     <Layout>
                       <Profile />
+                    </Layout>
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="/users"
+                element={
+                  <ProtectedRoute>
+                    <Layout>
+                      <Users />
                     </Layout>
                   </ProtectedRoute>
                 }

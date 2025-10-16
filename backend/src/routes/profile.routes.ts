@@ -4,6 +4,15 @@ import { prisma } from '../prisma/client';
 
 const router = Router();
 
+// GET /profiles - list basic profiles (users)
+router.get('/', auth, async (_req, res) => {
+  const users = await prisma.user.findMany({
+    orderBy: { id: 'asc' },
+    select: { id: true, name: true, email: true, createdAt: true }
+  });
+  return res.json({ success: true, data: users });
+});
+
 router.get('/me', auth, async (req, res) => {
   if (!req.userId) {
     return res.status(401).json({ success: false, message: 'Unauthorized' });

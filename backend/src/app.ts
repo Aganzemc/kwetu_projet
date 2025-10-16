@@ -5,6 +5,7 @@ import authRouter from './routes/auth.routes';
 import { errorHandler, notFound } from './middlewares/errorHandler';
 import type { Request, Response } from 'express';
 import profileRouter from './routes/profile.routes';
+import usersRouter from './routes/users.routes';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.use('/api/auth', authRouter);
 // Alias sans le préfixe /api pour compatibilité avec le frontend existant
 app.use('/auth', authRouter);
 app.use('/profiles', profileRouter);
+app.use('/users', usersRouter);
 
 app.use(notFound);
 app.use(errorHandler);
