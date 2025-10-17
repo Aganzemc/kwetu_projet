@@ -39,6 +39,11 @@ export const api = {
   // groups
   listGroups: () => request('/groups'),
 
+  // conversations
+  conversations: {
+    list: () => request('/conversations')
+  },
+
   // messages
   listMessages: (params: { peerId?: string; groupId?: string }) => {
     const q = new URLSearchParams();

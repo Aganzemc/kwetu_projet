@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 type Profile = any;
 type Group = any;
 type Message = any;
-import { Send, Users, Plus, Phone, Video, Paperclip, Smile, MoreVertical, Circle } from 'lucide-react';
+import { Send, Users, Plus, Phone, Video, Paperclip, Smile, MoreVertical, Circle, Menu, ArrowLeft } from 'lucide-react';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 // realtime disabled
 
@@ -29,7 +29,34 @@ export default function Chat() {
   const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [addListOpen, setAddListOpen] = useState(false);
+  const [addSearch, setAddSearch] = useState('');
+  const [lastByUser, setLastByUser] = useState<Record<string, any>>({});
+  const [lastByGroup, setLastByGroup] = useState<Record<string, any>>({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isMobile = window.innerWidth < 768;
+
+  // Fermer la sidebar quand on sélectionne une conversation sur mobile
+  useEffect(() => {
+    if (activeChat && isMobile) {
+      setSidebarOpen(false);
+    }
+  }, [activeChat, isMobile]);
+
+  // Gestion du redimensionnement
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(true);
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Vérifier au chargement initial
+    
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleDeleteGroup = async () => {
     if (!activeChat || activeChat.type !== 'group') return;
@@ -40,6 +67,27 @@ export default function Chat() {
       setActiveChat(null);
     } catch (e: any) {
       alert(e?.message || 'Failed to delete group');
+    }
+  };
+
+  const resolveSenderName = (senderId: string | number) => {
+    if (String(senderId) === String(user?.id)) return 'You';
+    const fromUsers = users.find((x: any) => String(x.id) === String(senderId))?.name;
+    const fromGroup = groupMembers.find((x: any) => String(x.id) === String(senderId))?.name;
+    return fromUsers || fromGroup || String(senderId);
+  };
+
+  const handleAddMemberByUser = async (userId: number | string) => {
+    if (!activeChat || activeChat.type !== 'group') return;
+    try {
+      await api.groups.addMember(activeChat.id, Number(userId));
+      const res = await api.groups.members(activeChat.id);
+      setGroupMembers(res?.data || []);
+      setAddListOpen(false);
+      setMoreOpen(false);
+      alert('Membre ajouté');
+    } catch (e: any) {
+      alert(e?.message || 'Failed to add member');
     }
   };
 
@@ -91,6 +139,12 @@ export default function Chat() {
   }, [activeChat]);
 
   useEffect(() => {
+    fetchConversations();
+    const interval = setInterval(fetchConversations, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
@@ -131,6 +185,21 @@ export default function Chat() {
     setGroups((data?.data) || []);
   };
 
+  const fetchConversations = async () => {
+    try {
+      const data = await api.conversations.list();
+      const items = data?.data || [];
+      const u: Record<string, any> = {};
+      const g: Record<string, any> = {};
+      for (const c of items) {
+        if (c.type === 'private') u[String(c.id)] = c;
+        else if (c.type === 'group') g[String(c.id)] = c;
+      }
+      setLastByUser(u);
+      setLastByGroup(g);
+    } catch {}
+  };
+
   const handleCreateGroup = async () => {
     const name = prompt('Group name');
     if (!name || !name.trim()) return;
@@ -147,7 +216,14 @@ export default function Chat() {
     const data = await api.messages.list(
       activeChat.type === 'user' ? { peerId: activeChat.id } : { groupId: activeChat.id }
     );
-    setMessages((data?.data) || []);
+    const list = (data?.data) || [];
+    setMessages(list);
+    // Marquer comme lus les messages reçus non lus
+    try {
+      const unread = list.filter((m: any) => String(m.senderId) !== String(user.id) && !m.readAt);
+      // Option simple: appels individuels
+      await Promise.all(unread.map((m: any) => api.messages.markRead(m.id)));
+    } catch {}
   };
 
   const subscribeToUsers = () => {
@@ -226,6 +302,15 @@ export default function Chat() {
     return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const formatDateOrTime = (timestamp: string) => {
+    const d = new Date(timestamp);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-colors">
@@ -257,7 +342,7 @@ export default function Chat() {
                 >
                   <div className="relative">
                     <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
-                      {/* avatar placeholder */}
+                      {/* avatar placeholder a */}
                     </div>
                     {u.isOnline && (
                       <Circle className="absolute bottom-0 right-0 w-3 h-3 fill-green-500 text-green-500" />
@@ -267,10 +352,30 @@ export default function Chat() {
                     <p className="font-medium truncate">
                       {u.name || 'User'}
                     </p>
-                    <p className={`text-xs ${activeChat?.id === u.id ? 'text-gray-300 dark:text-gray-700' : 'text-gray-500 dark:text-gray-400'}`}>
-                      {u.isOnline ? 'Online' : 'Offline'}
-                    </p>
+                    {(() => {
+                      const last = lastByUser[String(u.id)];
+                      if (!last) return (
+                        <p className={`text-xs ${activeChat?.id === u.id ? 'text-gray-300 dark:text-gray-700' : 'text-gray-500 dark:text-gray-400'}`}>
+                          {u.isOnline ? 'Online' : 'Offline'}
+                        </p>
+                      );
+                      const senderName = String(last.lastSenderId) === String(user?.id)
+                        ? 'You'
+                        : (users.find((x: any) => String(x.id) === String(last.lastSenderId))?.name || '');
+                      return (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {senderName ? senderName + ': ' : ''}{last.lastMessage}
+                        </p>
+                      );
+                    })()}
                   </div>
+                  {(() => {
+                    const last = lastByUser[String(u.id)];
+                    if (!last) return null;
+                    return (
+                      <span className="text-[10px] text-gray-400 ml-2 whitespace-nowrap">{formatDateOrTime(last.lastAt)}</span>
+                    );
+                  })()}
                 </button>
               ))}
             </div>
@@ -308,189 +413,250 @@ export default function Chat() {
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-medium truncate">{g.name}</p>
-                    <p className={`text-xs ${activeChat?.id === g.id ? 'text-gray-300 dark:text-gray-700' : 'text-gray-500 dark:text-gray-400'}`}>
-                      Group
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col">
-        {activeChat ? (
-          <>
-            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-600 overflow-hidden">
-                  {activeChat.avatar && (
-                    <img src={activeChat.avatar} alt="" className="w-full h-full object-cover" />
-                  )}
-                </div>
-                <div>
-                  <h2 className="font-semibold text-gray-900 dark:text-white">{activeChat.name}</h2>
-                  {activeChat.type === 'user' && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {activeChat.isOnline ? 'Online' : 'Offline'}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-3 md:gap-4">
-                {activeChat.type === 'group' && (
-                  <div className="flex items-center gap-2">
-                    <input
-                      list="candidate-users"
-                      value={selectedMemberName}
-                      onChange={(e) => setSelectedMemberName(e.target.value)}
-                      placeholder="Add member by name"
-                      className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded"
-                    />
-                    <datalist id="candidate-users">
-                      {users
-                        .filter((u) => !groupMembers.some((m) => String(m.id) === String(u.id)))
-                        .map((u) => (
-                          <option key={u.id} value={u.name || u.email || String(u.id)} />
-                        ))}
-                    </datalist>
-                    <button onClick={handleAddMember} className="px-3 py-1 text-sm rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition">
-                      Add
-                    </button>
                     {(() => {
-                      const groupMeta = groups.find((g) => String(g.id) === String(activeChat.id));
-                      const isCreator = groupMeta && String(groupMeta.creatorId) === String(user?.id);
-                      if (!isCreator) return null;
+                      const last = lastByGroup[String(g.id)];
+                      if (!last) return (
+                        <p className={`text-xs ${activeChat?.id === g.id ? 'text-gray-300 dark:text-gray-700' : 'text-gray-500 dark:text-gray-400'}`}>Group</p>
+                      );
+                      const senderName = String(last.lastSenderId) === String(user?.id)
+                        ? 'You'
+                        : (users.find((x: any) => String(x.id) === String(last.lastSenderId))?.name || '');
                       return (
-                        <button onClick={handleDeleteGroup} className="px-3 py-1 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 transition">
-                          Delete group
-                        </button>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {senderName ? senderName + ': ' : ''}{last.lastMessage}
+                        </p>
                       );
                     })()}
                   </div>
-                )}
-                <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-700 dark:text-gray-300">
-                  <Phone className="w-5 h-5" />
-                </button>
-                <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-700 dark:text-gray-300">
-                  <Video className="w-5 h-5" />
-                </button>
-                <div className="relative">
-                  <button
-                    onClick={() => setMoreOpen((v) => !v)}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-700 dark:text-gray-300"
-                  >
-                    <MoreVertical className="w-5 h-5" />
-                  </button>
-                  {moreOpen && (
-                    <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20">
-                      {activeChat.type === 'group' && (
-                        <>
-                          <button onClick={() => { setMoreOpen(false); handleAddMember(); }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Add member</button>
-                          <button onClick={() => { setMoreOpen(false); alert('Group settings coming soon'); }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">Group settings</button>
-                          {(() => {
-                            const groupMeta = groups.find((g) => String(g.id) === String(activeChat.id));
-                            const isCreator = groupMeta && String(groupMeta.creatorId) === String(user?.id);
-                            if (isCreator) return null;
-                            return (
-                              <button onClick={() => { setMoreOpen(false); handleLeaveGroup(); }} className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700">Leave group</button>
-                            );
-                          })()}
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="ml-2">
-                  <LanguageSwitcher />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {activeChat.type === 'group' && groupMembers.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {groupMembers.map((m) => (
-                    <span key={m.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
-                      {m.name || m.email || m.id}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {messages.map((msg) => {
-                const isOwn = String(msg.senderId) === String(user?.id);
-                return (
-                  <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-md px-4 py-2 rounded-2xl ${
-                      isOwn
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white'
-                    }`}>
-                      <p className="break-words">{msg.content}</p>
-                      <p className={`text-xs mt-1 ${isOwn ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
-                        {formatTime(msg.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4 transition-colors">
-              <div className="flex items-center gap-2">
-                <label className="cursor-pointer p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors text-gray-700 dark:text-gray-300">
-                  <Paperclip className="w-5 h-5" />
-                  <input
-                    type="file"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </label>
-                {(() => {
-                  const isGroup = activeChat.type === 'group';
-                  const isMember = isGroup ? groupMembers.some((m) => String(m.id) === String(user?.id)) : true;
-                  return (
-                    <input
-                      type="text"
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder={isGroup && !isMember ? 'You must be a member to send messages' : 'Type a message...'}
-                      disabled={isGroup && !isMember}
-                      className={`flex-1 px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white bg-white dark:bg-gray-900 text-gray-900 dark:text-white transition-colors ${
-                        isGroup && !isMember ? 'opacity-60 cursor-not-allowed' : ''
-                      }`}
-                    />
-                  );
-                })()}
-                <button
-                  onClick={sendMessage}
-                  disabled={(() => {
-                    const isGroup = activeChat.type === 'group';
-                    const isMember = isGroup ? groupMembers.some((m) => String(m.id) === String(user?.id)) : true;
-                    return !messageInput.trim() || loading || (isGroup && !isMember);
+                  {(() => {
+                    const last = lastByGroup[String(g.id)];
+                    if (!last) return null;
+                    return (
+                      <span className="text-[10px] text-gray-400 ml-2 whitespace-nowrap">{formatDateOrTime(last.lastAt)}</span>
+                    );
                   })()}
-                  className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-full hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <Send className="w-5 h-5" />
                 </button>
-              </div>
-              {activeChat.type === 'group' && !groupMembers.some((m) => String(m.id) === String(user?.id)) && (
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">You are not a member of this group. Ask an admin/member to add you.</p>
+              ))}
+      </div>
+    </div>
+
+    
+  </div>
+  </div>
+
+  {/* Chat Area */}
+  <div className={`flex-1 flex flex-col transition-all duration-300 ${
+    sidebarOpen ? 'ml-0 md:ml-0' : 'ml-0'
+  }`}>
+    {activeChat ? (
+      <>
+        {/* Chat Header */}
+        <div className="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between">
+          <div className="flex items-center space-x-2 md:space-x-3">
+            <button 
+              onClick={() => isMobile ? setSidebarOpen(true) : null}
+              className="md:hidden mr-1 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+            </button>
+            <div className="relative">
+              <img 
+                src={activeChat.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeChat.name)}&background=random`} 
+                alt={activeChat.name}
+                className="w-8 h-8 md:w-10 md:h-10 rounded-full"
+              />
+              {activeChat.isOnline && (
+                <div className="absolute bottom-0 right-0 w-2.5 h-2.5 md:w-3 md:h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
               )}
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
-            <div className="text-center">
-              <Users className="w-16 h-16 mx-auto mb-4" />
-              <p className="text-lg">Select a chat to start messaging</p>
+            <div className="min-w-0">
+              <h2 className="text-base md:text-lg font-semibold text-gray-900 dark:text-white truncate max-w-[150px] md:max-w-xs">
+                {activeChat.name}
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                {activeChat.isOnline ? 'En ligne' : 'Hors ligne'}
+              </p>
             </div>
           </div>
-        )}
+          <div className="flex items-center space-x-1 md:space-x-2">
+            <button 
+              className="p-1.5 md:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+              title="Appel vocal"
+            >
+              <Phone className="w-4 h-4 md:w-5 md:h-5" />
+            </button>
+            <button 
+              className="p-1.5 md:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+              title="Appel vidéo"
+            >
+              <Video className="w-4 h-4 md:w-5 md:h-5" />
+            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setMoreOpen(!moreOpen)}
+                className="p-1.5 md:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+                title="Plus d'options"
+              >
+                <MoreVertical className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+              {moreOpen && (
+                <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20">
+                  {activeChat.type === 'group' && (
+                    <>
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation();
+                          setAddListOpen((v) => !v);
+                          setMoreOpen(false);
+                        }} 
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Ajouter un membre
+                      </button>
+                      {addListOpen && (
+                        <div className="px-3 pb-2">
+                          <input
+                            value={addSearch}
+                            onChange={(e) => setAddSearch(e.target.value)}
+                            placeholder="Rechercher..."
+                            className="w-full mb-2 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-400"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="max-h-48 overflow-auto -mx-1">
+                            {users
+                              .filter((u) => !groupMembers.some((m) => String(m.id) === String(u.id)))
+                              .filter((u) => (u.name || u.email || '').toLowerCase().includes(addSearch.toLowerCase()))
+                              .slice(0, 5)
+                              .map((u) => (
+                                <button
+                                  key={u.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddMemberByUser(u.id);
+                                    setAddListOpen(false);
+                                    setMoreOpen(false);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                >
+                                  {u.name || u.email || u.id}
+                                </button>
+                              ))}
+                            {users.filter((u) => !groupMembers.some((m) => String(m.id) === String(u.id))).length === 0 && (
+                              <div className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">Aucun utilisateur disponible</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation();
+                          setMoreOpen(false);
+                          alert('Paramètres du groupe bientôt disponibles'); 
+                        }} 
+                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        Paramètres du groupe
+                      </button>
+                      {(() => {
+                        const groupMeta = groups.find((g) => String(g.id) === String(activeChat.id));
+                        const isCreator = groupMeta && String(groupMeta.creatorId) === String(user?.id);
+                        if (isCreator) return null;
+                        return (
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation();
+                              setMoreOpen(false);
+                              handleLeaveGroup(); 
+                            }} 
+                            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            Quitter le groupe
+                          </button>
+                        );
+                      })()}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div 
+          className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 bg-gray-50 dark:bg-gray-900"
+          onClick={() => setMoreOpen(false)}
+        >
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[85%] md:max-w-md rounded-lg px-3 py-2 ${
+                  message.senderId === user?.id
+                    ? 'bg-blue-600 text-white rounded-tr-none'
+                    : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-tl-none border border-gray-200 dark:border-gray-700'
+                }`}
+              >
+                <p className="break-words text-sm md:text-base">{message.content}</p>
+                <div className="flex justify-end items-center mt-1 space-x-1">
+                  <span className={`text-xs ${
+                    message.senderId === user?.id ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                  }`}>
+                    {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {message.senderId === user?.id && (
+                    <span className="text-xs">
+                      {message.readAt ? '✓✓' : message.deliveredAt ? '✓' : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Message Input */}
+        <div className="p-3 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-2">
+          <input
+            type="text"
+            placeholder={activeChat.type === 'group' && !groupMembers.some((m) => String(m.id) === String(user?.id)) ? 'You are not a member of this group' : 'Type a message'}
+            value={messageInput}
+            onChange={(e) => setMessageInput(e.target.value)}
+            onKeyDown={handleKeyPress}
+            disabled={(() => {
+              const isGroup = activeChat.type === 'group';
+              const isMember = isGroup ? groupMembers.some((m) => String(m.id) === String(user?.id)) : true;
+              return loading || (isGroup && !isMember);
+            })()}
+            className={`flex-1 px-3 py-2 rounded-lg border text-sm md:text-base bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              activeChat.type === 'group' && !groupMembers.some((m) => String(m.id) === String(user?.id)) ? 'opacity-60 cursor-not-allowed' : ''
+            }`}
+          />        
+          <button
+            onClick={sendMessage}
+            disabled={(() => {
+              const isGroup = activeChat.type === 'group';
+              const isMember = isGroup ? groupMembers.some((m) => String(m.id) === String(user?.id)) : true;
+              return !messageInput.trim() || loading || (isGroup && !isMember);
+            })()}
+            className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-full hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </div>
+      </>
+    ) : (
+      <div className="flex-1 flex items-center justify-center text-gray-500 dark:text-gray-400">
+        <div className="text-center">
+          <Users className="w-16 h-16 mx-auto mb-4" />
+          <p className="text-lg">Select a chat to start messaging</p>
+        </div>
       </div>
+    )}
+  </div>
     </div>
   );
 }

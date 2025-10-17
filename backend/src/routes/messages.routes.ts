@@ -14,6 +14,12 @@ router.get('/', auth, async (req, res) => {
       const gid = Number(groupId);
       const isMember = await prisma.groupMember.findFirst({ where: { groupId: gid, userId } });
       if (!isMember) return res.status(403).json({ success: false, message: 'Forbidden' });
+      // Marquer comme livrés les messages non envoyés par l'utilisateur et pas encore livrés
+      await prisma.message.updateMany({
+        where: { groupId: gid, senderId: { not: userId }, deliveredAt: null },
+        data: { deliveredAt: new Date() }
+      });
+
       const messages = await prisma.message.findMany({
         where: { groupId: gid },
         orderBy: { createdAt: 'asc' }
@@ -22,6 +28,12 @@ router.get('/', auth, async (req, res) => {
     }
     if (peerId) {
       const pid = Number(peerId);
+      // Marquer comme livrés les messages destinés à l'utilisateur et pas encore livrés
+      await prisma.message.updateMany({
+        where: { recipientId: userId, deliveredAt: null },
+        data: { deliveredAt: new Date() }
+      });
+
       const messages = await prisma.message.findMany({
         where: {
           OR: [
