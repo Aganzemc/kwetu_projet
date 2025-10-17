@@ -21,11 +21,13 @@ interface ActiveChat {
 export default function Chat() {
   const { user, profile } = useAuth();
   const ENABLE_CONVERSATIONS = false;
+  const currentUserId = String(profile?.id ?? user?.id ?? '');
   const [users, setUsers] = useState<Profile[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [groupMembers, setGroupMembers] = useState<Profile[]>([]);
+  const [membersStatus, setMembersStatus] = useState<'idle' | 'ok' | 'forbidden'>('idle');
   const [selectedMemberName, setSelectedMemberName] = useState('');
   const [messageInput, setMessageInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -72,7 +74,7 @@ export default function Chat() {
   };
 
   const resolveSenderName = (senderId: string | number) => {
-    if (String(senderId) === String(user?.id)) return 'You';
+    if (String(senderId) === currentUserId) return 'You';
     const fromUsers = users.find((x: any) => String(x.id) === String(senderId))?.name;
     const fromGroup = groupMembers.find((x: any) => String(x.id) === String(senderId))?.name;
     return fromUsers || fromGroup || String(senderId);
@@ -123,10 +125,18 @@ export default function Chat() {
     const loadMembers = async () => {
       if (activeChat?.type !== 'group') {
         setGroupMembers([]);
+        setMembersStatus('idle');
         return;
       }
-      const res = await api.groups.members(activeChat.id);
-      setGroupMembers(res?.data || []);
+      try {
+        const res = await api.groups.members(activeChat.id);
+        setGroupMembers(res?.data || []);
+        setMembersStatus('ok');
+      } catch (e: any) {
+        // 403 (Forbidden) probable si l'utilisateur n'est pas membre
+        setGroupMembers([]);
+        setMembersStatus('forbidden');
+      }
     };
     loadMembers();
   }, [activeChat]);
@@ -214,7 +224,7 @@ export default function Chat() {
       const userPromises = users.map(async (u: any) => {
         try {
           const res = await api.messages.list({ peerId: String(u.id) });
-          const listRaw = (res?.data) || [];
+          const listRaw = (Array.isArray(res) ? res : (res?.data) || []);
           const list = listRaw.map((m: any) => ({
             ...m,
             senderId: m.senderId ?? m.sender_id ?? m.senderid,
@@ -279,27 +289,31 @@ export default function Chat() {
 
   const fetchMessages = async () => {
     if (!activeChat || !user) return;
-    const data = await api.messages.list(
-      activeChat.type === 'user' ? { peerId: activeChat.id } : { groupId: activeChat.id }
-    );
-    const list = (data?.data) || [];
-    // normaliser les clés pour l'UI (camelCase)
-    const normalized = list.map((m: any) => ({
-      ...m,
-      senderId: m.senderId ?? m.sender_id ?? m.senderid,
-      recipientId: m.recipientId ?? m.recipient_id ?? m.recipientid,
-      groupId: m.groupId ?? m.group_id ?? m.groupid,
-      createdAt: m.createdAt ?? m.created_at ?? m.createdat,
-      deliveredAt: m.deliveredAt ?? m.delivered_at ?? m.deliveredat,
-      readAt: m.readAt ?? m.read_at ?? m.readat,
-    }));
-    setMessages(normalized);
-    // Marquer comme lus les messages reçus non lus
     try {
-      const unread = list.filter((m: any) => String(m.senderId) !== String(user.id) && !m.readAt);
-      // Option simple: appels individuels
-      await Promise.all(unread.map((m: any) => api.messages.markRead(m.id)));
-    } catch {}
+      const data = await api.messages.list(
+        activeChat.type === 'user' ? { peerId: activeChat.id } : { groupId: activeChat.id }
+      );
+      const list = (Array.isArray(data) ? data : (data?.data) || []);
+      // normaliser les clés pour l'UI (camelCase)
+      const normalized = list.map((m: any) => ({
+        ...m,
+        senderId: m.senderId ?? m.sender_id ?? m.senderid ?? m.userId ?? m.user_id ?? m.userid ?? m.sender?.id,
+        recipientId: m.recipientId ?? m.recipient_id ?? m.recipientid,
+        groupId: m.groupId ?? m.group_id ?? m.groupid,
+        createdAt: m.createdAt ?? m.created_at ?? m.createdat ?? m.timestamp,
+        deliveredAt: m.deliveredAt ?? m.delivered_at ?? m.deliveredat,
+        readAt: m.readAt ?? m.read_at ?? m.readat,
+      }));
+      setMessages(normalized);
+      // Marquer comme lus les messages reçus non lus
+      try {
+        const unread = list.filter((m: any) => String(m.senderId) !== currentUserId && !m.readAt);
+        await Promise.all(unread.map((m: any) => api.messages.markRead(m.id)));
+      } catch {}
+    } catch (e: any) {
+      // 403 (Forbidden) probable si non-membre du groupe
+      setMessages([]);
+    }
   };
 
   const subscribeToUsers = () => {
@@ -313,8 +327,9 @@ export default function Chat() {
     if (!messageInput.trim() || !activeChat || !user) return;
     // UI guard: only group members can send to a group
     if (activeChat.type === 'group') {
-      const isMember = groupMembers.some((m) => String(m.id) === String(user.id));
-      if (!isMember) return;
+      const isMember = groupMembers.some((m) => String(m.id) === currentUserId);
+      const canSend = membersStatus === 'ok' ? isMember : true; // si on ne peut pas vérifier, on autorise
+      if (!canSend) return;
     }
 
     setLoading(true);
@@ -354,7 +369,7 @@ export default function Chat() {
     const { url: publicUrl } = await res.json();
 
     const messageData: any = {
-        sender_id: user.id,
+        sender_id: currentUserId,
         content: `Sent a file: ${file.name}`,
         message_type: 'file',
         file_url: publicUrl,
@@ -363,12 +378,13 @@ export default function Chat() {
       };
 
       if (activeChat.type === 'user') {
-        messageData.recipient_id = activeChat.id;
+        messageData.recipient_id = Number(activeChat.id);
       } else {
-        messageData.group_id = activeChat.id;
+        messageData.group_id = Number(activeChat.id);
       }
 
     await api.sendMessage(messageData);
+    try { await fetchMessages(); } catch {}
 
     setLoading(false);
   };
@@ -435,7 +451,7 @@ export default function Chat() {
                           {u.isOnline ? 'Online' : 'Offline'}
                         </p>
                       );
-                      const senderName = String(last.lastSenderId) === String(user?.id)
+                      const senderName = String(last.lastSenderId) === currentUserId
                         ? 'You'
                         : (users.find((x: any) => String(x.id) === String(last.lastSenderId))?.name || '');
                       return (
@@ -492,9 +508,9 @@ export default function Chat() {
                     {(() => {
                       const last = lastByGroup[String(g.id)];
                       if (!last) return (
-                        <p className={`text-xs ${activeChat?.id === g.id ? 'text-gray-300 dark:text-gray-700' : 'text-gray-500 dark:text-gray-400'}`}>Group</p>
+                        <p className={`${activeChat?.id === g.id ? 'text-gray-300 dark:text-gray-700' : 'text-gray-500 dark:text-gray-400'} text-xs`}>Group</p>
                       );
-                      const senderName = String(last.lastSenderId) === String(user?.id)
+                      const senderName = String(last.lastSenderId) === currentUserId
                         ? 'You'
                         : (users.find((x: any) => String(x.id) === String(last.lastSenderId))?.name || '');
                       return (
@@ -527,7 +543,7 @@ export default function Chat() {
     {activeChat ? (
       <>
         {/* Chat Header */}
-        <div className="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between">
+        <div className="p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center">
           <div className="flex items-center space-x-2 md:space-x-3">
             <button 
               onClick={() => isMobile ? setSidebarOpen(true) : null}
@@ -554,7 +570,7 @@ export default function Chat() {
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-1 md:space-x-2">
+          <div className="flex items-center space-x-1 md:space-x-2 ml-4 md:ml-6">
             <button 
               className="p-1.5 md:p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
               title="Appel vocal"
@@ -635,8 +651,21 @@ export default function Chat() {
                       </button>
                       {(() => {
                         const groupMeta = groups.find((g) => String(g.id) === String(activeChat.id));
-                        const isCreator = groupMeta && String(groupMeta.creatorId) === String(user?.id);
-                        if (isCreator) return null;
+                        const isCreator = groupMeta && String(groupMeta.creatorId) === String(profile?.id ?? user?.id);
+                        if (isCreator) {
+                          return (
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation();
+                                setMoreOpen(false);
+                                handleDeleteGroup();
+                              }} 
+                              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                              Supprimer le groupe
+                            </button>
+                          );
+                        }
                         return (
                           <button 
                             onClick={(e) => { 
@@ -682,26 +711,26 @@ export default function Chat() {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${String(message.senderId) === String(user?.id) ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${String(message.senderId) === currentUserId ? 'justify-end' : 'justify-start'}`}
             >
               <div
                 className={`max-w-[85%] md:max-w-md rounded-lg px-3 py-2 ${
-                  String(message.senderId) === String(user?.id)
+                  String(message.senderId) === currentUserId
                     ? 'bg-blue-600 text-white rounded-tr-none'
                     : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-tl-none border border-gray-200 dark:border-gray-700'
                 }`}
               >
-                {activeChat.type === 'group' && String(message.senderId) !== String(user?.id) && (
+                {activeChat.type === 'group' && (
                   <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">{resolveSenderName(message.senderId)}</p>
                 )}
                 <p className="break-words text-sm md:text-base">{message.content}</p>
                 <div className="flex justify-end items-center mt-1 space-x-1">
                   <span className={`text-xs ${
-                    String(message.senderId) === String(user?.id) ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                    String(message.senderId) === currentUserId ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
                   }`}>
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  {String(message.senderId) === String(user?.id) && (
+                  {String(message.senderId) === currentUserId && (
                     <span className="text-xs">
                       {message.readAt ? '✓✓' : message.deliveredAt ? '✓' : ''}
                     </span>
@@ -717,24 +746,27 @@ export default function Chat() {
         <div className="p-3 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-2">
           <input
             type="text"
-            placeholder={activeChat.type === 'group' && !groupMembers.some((m) => String(m.id) === String(user?.id)) ? 'You are not a member of this group' : 'Type a message'}
+            placeholder={("group" === activeChat.type) && (membersStatus === 'ok') && !groupMembers.some((m) => String(m.id) === currentUserId)
+              ? 'You are not a member of this group' : 'Type a message'}
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
             onKeyDown={handleKeyPress}
             disabled={(() => {
               const isGroup = activeChat.type === 'group';
-              const isMember = isGroup ? groupMembers.some((m) => String(m.id) === String(user?.id)) : true;
+              const known = membersStatus === 'ok';
+              const isMember = isGroup ? (known ? groupMembers.some((m) => String(m.id) === currentUserId) : true) : true;
               return loading || (isGroup && !isMember);
             })()}
             className={`flex-1 px-3 py-2 rounded-lg border text-sm md:text-base bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              activeChat.type === 'group' && !groupMembers.some((m) => String(m.id) === String(user?.id)) ? 'opacity-60 cursor-not-allowed' : ''
+              (activeChat.type === 'group' && membersStatus === 'ok' && !groupMembers.some((m) => String(m.id) === currentUserId)) ? 'opacity-60 cursor-not-allowed' : ''
             }`}
           />        
           <button
             onClick={sendMessage}
             disabled={(() => {
               const isGroup = activeChat.type === 'group';
-              const isMember = isGroup ? groupMembers.some((m) => String(m.id) === String(user?.id)) : true;
+              const known = membersStatus === 'ok';
+              const isMember = isGroup ? (known ? groupMembers.some((m) => String(m.id) === currentUserId) : true) : true;
               return !messageInput.trim() || loading || (isGroup && !isMember);
             })()}
             className="p-2 bg-black dark:bg-white text-white dark:text-black rounded-full hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
