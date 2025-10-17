@@ -6,6 +6,8 @@ import { errorHandler, notFound } from './middlewares/errorHandler';
 import type { Request, Response } from 'express';
 import profileRouter from './routes/profile.routes';
 import usersRouter from './routes/users.routes';
+import groupsRouter from './routes/groups.routes';
+import messagesRouter from './routes/messages.routes';
 
 dotenv.config();
 
@@ -24,6 +26,8 @@ app.use('/api/auth', authRouter);
 app.use('/auth', authRouter);
 app.use('/profiles', profileRouter);
 app.use('/users', usersRouter);
+app.use('/groups', groupsRouter);
+app.use('/messages', messagesRouter);
 
 app.use(notFound);
 app.use(errorHandler);

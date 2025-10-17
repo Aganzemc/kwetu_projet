@@ -60,6 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = loginRes?.data?.user;
       if (token) setToken(token);
       if (user) setUser({ id: String(user.id), email: user.email });
+      // Mark online after successful auth
+      try { await api.updateMe({ is_online: true }); } catch {}
       await fetchProfile();
       return { error: null };
     } catch (e) {
@@ -74,12 +76,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = res?.data?.user;
       if (token) setToken(token);
       if (user) setUser({ id: String(user.id), email: user.email });
+      // Mark online after successful login
+      try { await api.updateMe({ is_online: true }); } catch {}
       await fetchProfile();
       return { error: null };
     } catch (e) {
       return { error: e };
     }
   };
+
+  // Heartbeat to keep user online while active
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      api.updateMe({ is_online: true }).catch(() => {});
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   const signOut = async () => {
     if (user) {

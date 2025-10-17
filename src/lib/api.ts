@@ -48,11 +48,32 @@ export const api = {
   },
   sendMessage: (payload: any) => request('/messages', { method: 'POST', body: JSON.stringify(payload) }),
 
+  messages: {
+    list: (params: { peerId?: string; groupId?: string }) => {
+      const q = new URLSearchParams();
+      if (params.peerId) q.set('peerId', params.peerId);
+      if (params.groupId) q.set('groupId', params.groupId);
+      return request(`/messages?${q.toString()}`);
+    },
+    send: (data: { content: string; recipientId?: number | string; groupId?: number | string }) =>
+      request('/messages', { method: 'POST', body: JSON.stringify(data) }),
+    markRead: (id: number | string) => request(`/messages/${id}/read`, { method: 'PATCH' })
+  },
+
   // users
   users: {
     list: () => request('/users'),
     get: (id: number | string) => request(`/users/${id}`),
     delete: (id: number | string) => request(`/users/${id}`, { method: 'DELETE' })
+  },
+
+  groups: {
+    create: (name: string) => request('/groups', { method: 'POST', body: JSON.stringify({ name }) }),
+    addMember: (groupId: number | string, userId: number | string) =>
+      request(`/groups/${groupId}/members`, { method: 'POST', body: JSON.stringify({ userId }) }),
+    members: (groupId: number | string) => request(`/groups/${groupId}/members`),
+    delete: (groupId: number | string) => request(`/groups/${groupId}`, { method: 'DELETE' }),
+    leave: (groupId: number | string) => request(`/groups/${groupId}/leave`, { method: 'POST' })
   }
 };
 
