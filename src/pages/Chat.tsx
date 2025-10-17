@@ -20,6 +20,7 @@ interface ActiveChat {
 
 export default function Chat() {
   const { user, profile } = useAuth();
+  const ENABLE_CONVERSATIONS = false;
   const [users, setUsers] = useState<Profile[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
@@ -139,10 +140,17 @@ export default function Chat() {
   }, [activeChat]);
 
   useEffect(() => {
-    fetchConversations();
-    const interval = setInterval(fetchConversations, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    if (ENABLE_CONVERSATIONS) {
+      fetchConversations();
+      const interval = setInterval(fetchConversations, 10000);
+      return () => clearInterval(interval);
+    } else {
+      // fallback périodique basé sur /messages
+      computeLastFromMessages();
+      const interval = setInterval(computeLastFromMessages, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [ENABLE_CONVERSATIONS, users, groups]);
 
   useEffect(() => {
     scrollToBottom();
@@ -200,6 +208,64 @@ export default function Chat() {
     } catch {}
   };
 
+  // Fallback: calculer les derniers messages par utilisateur/groupe si /conversations n'est pas disponible
+  const computeLastFromMessages = async () => {
+    try {
+      const userPromises = users.map(async (u: any) => {
+        try {
+          const res = await api.messages.list({ peerId: String(u.id) });
+          const listRaw = (res?.data) || [];
+          const list = listRaw.map((m: any) => ({
+            ...m,
+            senderId: m.senderId ?? m.sender_id ?? m.senderid,
+            createdAt: m.createdAt ?? m.created_at ?? m.createdat,
+          }));
+          if (!list.length) return null;
+          // prendre le plus récent par createdAt
+          const last = list.reduce((acc: any, m: any) => (!acc || new Date(m.createdAt) > new Date(acc.createdAt) ? m : acc), null);
+          return { key: String(u.id), value: {
+            id: u.id,
+            type: 'private',
+            lastMessage: last.content,
+            lastAt: last.createdAt,
+            lastSenderId: last.senderId,
+          }};
+        } catch { return null; }
+      });
+
+      const groupPromises = groups.map(async (g: any) => {
+        try {
+          const res = await api.messages.list({ groupId: String(g.id) });
+          const listRaw = (res?.data) || [];
+          const list = listRaw.map((m: any) => ({
+            ...m,
+            senderId: m.senderId ?? m.sender_id ?? m.senderid,
+            createdAt: m.createdAt ?? m.created_at ?? m.createdat,
+          }));
+          if (!list.length) return null;
+          const last = list.reduce((acc: any, m: any) => (!acc || new Date(m.createdAt) > new Date(acc.createdAt) ? m : acc), null);
+          return { key: String(g.id), value: {
+            id: g.id,
+            type: 'group',
+            lastMessage: last.content,
+            lastAt: last.createdAt,
+            lastSenderId: last.senderId,
+          }};
+        } catch { return null; }
+      });
+
+      const userResults = await Promise.all(userPromises);
+      const groupResults = await Promise.all(groupPromises);
+
+      const u: Record<string, any> = {};
+      const g: Record<string, any> = {};
+      for (const item of userResults) if (item) u[item.key] = item.value;
+      for (const item of groupResults) if (item) g[item.key] = item.value;
+      setLastByUser(u);
+      setLastByGroup(g);
+    } catch {}
+  };
+
   const handleCreateGroup = async () => {
     const name = prompt('Group name');
     if (!name || !name.trim()) return;
@@ -217,7 +283,17 @@ export default function Chat() {
       activeChat.type === 'user' ? { peerId: activeChat.id } : { groupId: activeChat.id }
     );
     const list = (data?.data) || [];
-    setMessages(list);
+    // normaliser les clés pour l'UI (camelCase)
+    const normalized = list.map((m: any) => ({
+      ...m,
+      senderId: m.senderId ?? m.sender_id ?? m.senderid,
+      recipientId: m.recipientId ?? m.recipient_id ?? m.recipientid,
+      groupId: m.groupId ?? m.group_id ?? m.groupid,
+      createdAt: m.createdAt ?? m.created_at ?? m.createdat,
+      deliveredAt: m.deliveredAt ?? m.delivered_at ?? m.deliveredat,
+      readAt: m.readAt ?? m.read_at ?? m.readat,
+    }));
+    setMessages(normalized);
     // Marquer comme lus les messages reçus non lus
     try {
       const unread = list.filter((m: any) => String(m.senderId) !== String(user.id) && !m.readAt);
@@ -581,6 +657,22 @@ export default function Chat() {
             </div>
           </div>
         </div>
+        {activeChat.type === 'group' && (
+          <div className="px-3 md:px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Membres du groupe ({groupMembers.length})</div>
+            <div className="flex flex-wrap gap-2">
+              {groupMembers.length > 0 ? (
+                groupMembers.map((m: any) => (
+                  <span key={m.id} className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
+                    {m.name || m.email || m.id}
+                  </span>
+                ))
+              ) : (
+                <span className="text-xs text-gray-400">Aucun membre</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <div 
@@ -590,23 +682,26 @@ export default function Chat() {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${String(message.senderId) === String(user?.id) ? 'justify-end' : 'justify-start'}`}
             >
               <div
                 className={`max-w-[85%] md:max-w-md rounded-lg px-3 py-2 ${
-                  message.senderId === user?.id
+                  String(message.senderId) === String(user?.id)
                     ? 'bg-blue-600 text-white rounded-tr-none'
                     : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-tl-none border border-gray-200 dark:border-gray-700'
                 }`}
               >
+                {activeChat.type === 'group' && String(message.senderId) !== String(user?.id) && (
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">{resolveSenderName(message.senderId)}</p>
+                )}
                 <p className="break-words text-sm md:text-base">{message.content}</p>
                 <div className="flex justify-end items-center mt-1 space-x-1">
                   <span className={`text-xs ${
-                    message.senderId === user?.id ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
+                    String(message.senderId) === String(user?.id) ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
                   }`}>
                     {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  {message.senderId === user?.id && (
+                  {String(message.senderId) === String(user?.id) && (
                     <span className="text-xs">
                       {message.readAt ? '✓✓' : message.deliveredAt ? '✓' : ''}
                     </span>
