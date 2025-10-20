@@ -79,6 +79,36 @@ export const api = {
     members: (groupId: number | string) => request(`/groups/${groupId}/members`),
     delete: (groupId: number | string) => request(`/groups/${groupId}`, { method: 'DELETE' }),
     leave: (groupId: number | string) => request(`/groups/${groupId}/leave`, { method: 'POST' })
+  },
+
+  // public announcements
+  announcements: {
+    list: () => request('/announcements')
+  },
+
+  // admin endpoints
+  admin: {
+    users: {
+      list: () => request('/admin/users'),
+      activate: (id: number | string, isActive: boolean) =>
+        request(`/admin/users/${id}/activate`, { method: 'PATCH', body: JSON.stringify({ isActive }) }),
+      delete: (id: number | string) => request(`/admin/users/${id}`, { method: 'DELETE' })
+    },
+    groups: {
+      list: () => request('/admin/groups'),
+      activate: (id: number | string, isActive: boolean) =>
+        request(`/admin/groups/${id}/activate`, { method: 'PATCH', body: JSON.stringify({ isActive }) }),
+      delete: (id: number | string) => request(`/admin/groups/${id}`, { method: 'DELETE' })
+    },
+    chats: {
+      delete: (payload: { userAId: number; userBId: number }) =>
+        request('/admin/chats', { method: 'DELETE', body: JSON.stringify(payload) })
+    },
+    announcements: {
+      create: (payload: { title: string; content: string }) =>
+        request('/admin/announcements', { method: 'POST', body: JSON.stringify(payload) }),
+      delete: (id: number | string) => request(`/admin/announcements/${id}`, { method: 'DELETE' })
+    }
   }
 };
 

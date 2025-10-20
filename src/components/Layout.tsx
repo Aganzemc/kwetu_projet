@@ -9,7 +9,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -84,6 +84,20 @@ export default function Layout({ children }: LayoutProps) {
           >
             <Settings className="w-6 h-6" />
           </Link>
+
+          {profile?.role === 'ADMIN' && (
+            <Link
+              to="/admin"
+              className={`p-3 rounded-xl transition-colors ${
+                isActive('/admin')
+                  ? 'bg-black dark:bg-white text-white dark:text-black'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+              title="Admin"
+            >
+              <span className="block w-6 h-6 text-center font-bold">A</span>
+            </Link>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">

@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -7,54 +8,70 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Admin role support
+enum Role {
+  USER
+  ADMIN
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  createdAt DateTime @default(now())
-  isOnline  Boolean  @default(false)
-  createdGroups Group[]
-  groupMemberships GroupMember[]
-  sentMessages     Message[]    @relation("MessagesSent")
-  receivedMessages Message[]    @relation("MessagesReceived")
-  groupJoinRequests GroupJoinRequest[]
+  id                    Int                @id @default(autoincrement())
+  name                  String
+  email                 String             @unique
+  password              String
+  createdAt             DateTime           @default(now())
+  isOnline              Boolean            @default(false)
+  // Admin controls
+  role                  Role               @default(USER)
+  isActive              Boolean            @default(true)
+  deletedAt             DateTime?
+  createdGroups         Group[]
+  groupMemberships      GroupMember[]
+  sentMessages          Message[]          @relation("MessagesSent")
+  receivedMessages      Message[]          @relation("MessagesReceived")
+  groupJoinRequests     GroupJoinRequest[]
+  // back-relation for announcements authored by this user
+  announcementsAuthored Announcement[]
 }
 
 model Group {
-  id        Int      @id @default(autoincrement())
-  name      String
-  createdAt DateTime @default(now())
-  creatorId Int
-  creator   User     @relation(fields: [creatorId], references: [id])
-  members   GroupMember[]
-  messages  Message[]
+  id           Int                @id @default(autoincrement())
+  name         String
+  createdAt    DateTime           @default(now())
+  creatorId    Int
+  creator      User               @relation(fields: [creatorId], references: [id])
+  members      GroupMember[]
+  messages     Message[]
   joinRequests GroupJoinRequest[]
+  // Admin controls
+  isActive     Boolean            @default(true)
+  deletedAt    DateTime?
 }
 
 model GroupMember {
-  id        Int      @id @default(autoincrement())
-  group     Group    @relation(fields: [groupId], references: [id])
-  groupId   Int
-  user      User     @relation(fields: [userId], references: [id])
-  userId    Int
-  joinedAt  DateTime @default(now())
+  id       Int      @id @default(autoincrement())
+  group    Group    @relation(fields: [groupId], references: [id])
+  groupId  Int
+  user     User     @relation(fields: [userId], references: [id])
+  userId   Int
+  joinedAt DateTime @default(now())
 
   @@unique([groupId, userId])
 }
 
 model Message {
-  id          Int      @id @default(autoincrement())
-  sender      User     @relation("MessagesSent", fields: [senderId], references: [id])
+  id          Int       @id @default(autoincrement())
+  sender      User      @relation("MessagesSent", fields: [senderId], references: [id])
   senderId    Int
-  recipient   User?    @relation("MessagesReceived", fields: [recipientId], references: [id])
+  recipient   User?     @relation("MessagesReceived", fields: [recipientId], references: [id])
   recipientId Int?
-  group       Group?   @relation(fields: [groupId], references: [id])
+  group       Group?    @relation(fields: [groupId], references: [id])
   groupId     Int?
   content     String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   deliveredAt DateTime?
   readAt      DateTime?
+  deletedAt   DateTime?
 }
 
 model GroupJoinRequest {
@@ -67,4 +84,14 @@ model GroupJoinRequest {
   createdAt DateTime @default(now())
 
   @@unique([groupId, userId])
+}
+
+// System-wide announcements created by admins
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  Int
 }
