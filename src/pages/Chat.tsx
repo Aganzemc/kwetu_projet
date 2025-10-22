@@ -30,6 +30,11 @@ export default function Chat() {
   const [membersStatus, setMembersStatus] = useState<'idle' | 'ok' | 'forbidden'>('idle');
   const [selectedMemberName, setSelectedMemberName] = useState('');
   const [messageInput, setMessageInput] = useState('');
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const EMOJIS = useMemo(() => [
+    '😀','😁','😂','🤣','😊','😍','😘','😎','😢','😭','😡','👍','👎','🙏','👏','🔥','🎉','💯','✅','❌','❤️','💛','💚','💙','💜','🤍','🤎','🖤'
+  ], []);
   const [loading, setLoading] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [addListOpen, setAddListOpen] = useState(false);
@@ -348,6 +353,23 @@ export default function Chat() {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const el = inputRef.current;
+    if (!el) {
+      setMessageInput(prev => prev + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? messageInput.length;
+    const end = el.selectionEnd ?? messageInput.length;
+    const next = messageInput.slice(0, start) + emoji + messageInput.slice(end);
+    setMessageInput(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + emoji.length;
+      el.setSelectionRange(pos, pos);
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -706,7 +728,7 @@ export default function Chat() {
         {/* Messages */}
         <div 
           className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 bg-gray-50 dark:bg-gray-900"
-          onClick={() => setMoreOpen(false)}
+          onClick={() => { setMoreOpen(false); setEmojiOpen(false); }}
         >
           {messages.map((message) => (
             <div
@@ -743,7 +765,7 @@ export default function Chat() {
         </div>
 
         {/* Message Input */}
-        <div className="p-3 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-2">
+        <div className="p-3 md:p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center gap-2 relative">
           <input
             type="text"
             placeholder={("group" === activeChat.type) && (membersStatus === 'ok') && !groupMembers.some((m) => String(m.id) === currentUserId)
@@ -751,6 +773,7 @@ export default function Chat() {
             value={messageInput}
             onChange={(e) => setMessageInput(e.target.value)}
             onKeyDown={handleKeyPress}
+            ref={inputRef}
             disabled={(() => {
               const isGroup = activeChat.type === 'group';
               const known = membersStatus === 'ok';
@@ -760,7 +783,31 @@ export default function Chat() {
             className={`flex-1 px-3 py-2 rounded-lg border text-sm md:text-base bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               (activeChat.type === 'group' && membersStatus === 'ok' && !groupMembers.some((m) => String(m.id) === currentUserId)) ? 'opacity-60 cursor-not-allowed' : ''
             }`}
-          />        
+          />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setEmojiOpen(v => !v)}
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+              title="Emoji"
+            >
+              <Smile className="w-5 h-5" />
+            </button>
+            {emojiOpen && (
+              <div className="absolute bottom-12 right-0 w-64 max-h-56 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow p-2 grid grid-cols-8 gap-1 z-20">
+                {EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    className="text-xl leading-none hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    onClick={() => insertEmoji(e)}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             onClick={sendMessage}
             disabled={(() => {

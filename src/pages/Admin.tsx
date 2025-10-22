@@ -49,7 +49,7 @@ export default function Admin() {
       await api.admin.users.activate(id, !isActive);
       const u = await api.admin.users.list();
       setUsers(u?.data || []);
-    } finally { setLoading(false); }
+    } finally { setLoading(false); } 
   };
 
   const softDeleteUser = async (id: number) => {
@@ -60,6 +60,14 @@ export default function Admin() {
       setUsers(u?.data || []);
     } finally { setLoading(false); }
   };
+
+  // const softApdateUser = async(id: number)=>{
+  //   setLoading(true);
+  //   try{
+  //     await api.admin.users.apdate(id)
+  //   }
+
+  // };
 
   const toggleGroupActive = async (id: number, isActive: boolean) => {
     setLoading(true);
