@@ -1,3 +1,5 @@
+const { channel } = require("diagnostics_channel");
+
 const CACHE_NAME = 'kwetucode-v1';
 const urlsToCache = [
   '/',
@@ -25,6 +27,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// t
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
